@@ -390,7 +390,7 @@ export function Activity() {
 
       {tab === 'activity' && (
         activities.length === 0 ? (
-          <div className="empty-state"><div className="empty-state-icon"><Activity size={24} /></div><h3>No activity yet</h3><p>Actions like creating services and deploying will appear here.</p></div>
+          <div className="empty-state"><div className="empty-state-icon"><ActivityIcon size={24} /></div><h3>No activity yet</h3><p>Actions like creating services and deploying will appear here.</p></div>
         ) : (
           <div className="card" style={{ padding:0 }}>
             {activities.map((a, i) => (

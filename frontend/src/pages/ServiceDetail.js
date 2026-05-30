@@ -160,7 +160,10 @@ export default function ServiceDetail() {
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><div className="spinner" /></div>;
   if (!service || !settings) return null;
 
-  const appUrl = `http://${service.subdomain}.${domain}`;
+  const backendBase = process.env.REACT_APP_API_URL?.replace('/api','') || '';
+  const appUrl = service.assignedPort
+    ? `${backendBase.replace(':5000','')}/app/${service.slug}`
+    : `https://${service.subdomain}.${domain}`;
   const TABS = ['overview', 'logs', 'metrics', 'environment', 'domains', 'settings', 'shell'];
 
   const inp = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: '0.875rem', outline: 'none', width: '100%' };

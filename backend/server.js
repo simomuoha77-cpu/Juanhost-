@@ -53,6 +53,7 @@ app.use('/api/notifications', authenticateToken, require('./routes/notifications
 app.use('/api/activity',      authenticateToken, require('./routes/activity'));
 app.use('/api/hooks',         require('./routes/hooks'));
 app.use('/api/admin',         authenticateToken, require('./routes/admin'));
+app.use('/app',               require('./routes/proxy'));
 
 app.get('/api/health', (req,res) => res.json({ status:'ok', platform:process.env.PLATFORM_NAME||'JuanHost', version:'2.0.0', uptime:process.uptime() }));
 app.use((req,res) => res.status(404).json({ error:'Not found' }));
