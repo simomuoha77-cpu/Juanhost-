@@ -9,10 +9,7 @@ const TYPE_COLORS = { web: '#6366f1', static: '#10b981', worker: '#f59e0b', cron
 const TYPE_ICONS = { web: '🌐', static: '📄', worker: '⚙️', cron: '⏰', private: '🔒' };
 
 function ServiceCard({ s }) {
-  const apiBase = process.env.REACT_APP_API_URL?.replace('/api','') || '';
-  const appUrl = s.assignedPort
-    ? `${apiBase}/app/${s.slug}`
-    : `https://${s.subdomain}.${domain}`;
+  const domain = process.env.REACT_APP_DOMAIN || 'juanhost.com';
   const color = TYPE_COLORS[s.type] || '#6366f1';
   return (
     <Link to={`/dashboard/services/${s._id}`} className="service-card">
@@ -31,7 +28,7 @@ function ServiceCard({ s }) {
 
       <div className="service-url">
         <Globe size={11} />
-        {s.assignedPort ? `${apiBase.replace('https://','')}/app/${s.slug}` : `${s.subdomain}.${domain}`}
+        {s.subdomain}.{domain}
       </div>
 
       <div className="service-footer">
