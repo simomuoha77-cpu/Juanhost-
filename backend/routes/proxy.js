@@ -1,66 +1,67 @@
 const express = require('express');
 const router = express.Router();
-const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const { Service } = require('../models/index');
+const { mountedApps } = require('../services/deployer');
 
-// Proxy requests to running apps: GET /app/:slug/*
-router.all('/:slug/*', async (req, res) => {
+const APPS_DIR = process.env.APPS_DIR || path.join(require('os').homedir(), 'juanhost-apps');
+
+router.all('/:slug', serveApp);
+router.all('/:slug/*', serveApp);
+
+async function serveApp(req, res, next) {
   try {
-    const service = await Service.findOne({ slug: req.params.slug, status: 'live' });
+    const service = await Service.findOne({ slug: req.params.slug });
+    if (!service) return res.status(404).send(errorPage('App not found', `No service named "${req.params.slug}" exists.`));
+    if (service.status !== 'live') return res.status(503).send(errorPage('App not running', `"${service.name}" is currently ${service.status}.`, service._id));
 
-    if (!service || !service.assignedPort) {
-      return res.status(404).send(`
-        <html>
-          <head><style>body{font-family:sans-serif;background:#060612;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}</style></head>
-          <body>
-            <div style="text-align:center">
-              <h2>🔍 App not found</h2>
-              <p style="color:#94a3b8">Service "${req.params.slug}" is not running or doesn't exist.</p>
-              <a href="/" style="color:#6366f1">← Back to JuanHost</a>
-            </div>
-          </body>
-        </html>
-      `);
+    // Dynamic Node "web" services: dispatch to the in-process mounted app.
+    if (service.type !== 'static') {
+      const handler = mountedApps.get(service.slug);
+      if (!handler) return res.status(503).send(errorPage('App not running', `"${service.name}" has no active process. Try redeploying.`, service._id));
+
+      // Strip the /app/:slug prefix so the mounted app sees its own root paths
+      const stripped = req.originalUrl.replace(new RegExp(`^/app/${service.slug}`), '') || '/';
+      req.url = stripped;
+      return handler(req, res, next || (() => {}));
     }
 
-    // Proxy to the running app
-    const targetPath = '/' + (req.params[0] || '');
-    const options = {
-      hostname: 'localhost',
-      port: service.assignedPort,
-      path: targetPath + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''),
-      method: req.method,
-      headers: { ...req.headers, host: `localhost:${service.assignedPort}` }
-    };
+    // Static services: serve files straight off disk.
+    const appDir = path.join(APPS_DIR, service.slug);
+    if (!fs.existsSync(appDir)) return res.status(404).send(errorPage('Files not found', `"${service.name}" has no deployed files yet.`, service._id));
 
-    const proxyReq = http.request(options, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode, proxyRes.headers);
-      proxyRes.pipe(res);
-    });
+    const reqPath = req.params[0] || '';
+    let filePath = path.join(appDir, reqPath);
+    if (!filePath.startsWith(appDir)) return res.status(403).send('Forbidden');
 
-    proxyReq.on('error', () => {
-      res.status(502).send(`
-        <html>
-          <head><style>body{font-family:sans-serif;background:#060612;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}</style></head>
-          <body>
-            <div style="text-align:center">
-              <h2>⚠️ App unavailable</h2>
-              <p style="color:#94a3b8">"${service.name}" is not responding on port ${service.assignedPort}.</p>
-              <a href="/dashboard/services/${service._id}" style="color:#6366f1">View service →</a>
-            </div>
-          </body>
-        </html>
-      `);
-    });
-
-    if (req.body && req.method !== 'GET') {
-      proxyReq.write(JSON.stringify(req.body));
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+      filePath = path.join(filePath, 'index.html');
     }
-    proxyReq.end();
+    if (!fs.existsSync(filePath)) {
+      const indexPath = path.join(appDir, 'index.html');
+      if (fs.existsSync(indexPath)) filePath = indexPath;
+      else return res.status(404).send(errorPage('Page not found', `"${reqPath}" not found.`));
+    }
 
+    const ext = path.extname(filePath).toLowerCase();
+    const types = { '.html':'text/html', '.css':'text/css', '.js':'application/javascript', '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
+    if (types[ext]) res.setHeader('Content-Type', types[ext]);
+    res.sendFile(filePath);
   } catch (err) {
-    res.status(500).send('Proxy error: ' + err.message);
+    res.status(500).send(errorPage('Server error', err.message));
   }
-});
+}
+
+function errorPage(title, message, serviceId) {
+  return `<!DOCTYPE html><html><head><title>${title}</title><style>
+*{margin:0;padding:0;box-sizing:border-box}body{background:#060612;color:#e2e8f0;font-family:sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{text-align:center;padding:48px 32px;background:#111128;border:1px solid #252545;border-radius:16px;max-width:420px;width:90%}
+h1{font-size:1.5rem;font-weight:800;margin-bottom:10px}p{color:#94a3b8;margin-bottom:24px;line-height:1.6}a{color:#6366f1;font-weight:600}
+</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:16px">!</div>
+<h1>${title}</h1><p>${message}</p>
+${serviceId ? `<a href="/dashboard/services/${serviceId}">View Service</a><br><br>` : ''}
+<a href="/">Back to JuanHost</a></div></body></html>`;
+}
 
 module.exports = router;

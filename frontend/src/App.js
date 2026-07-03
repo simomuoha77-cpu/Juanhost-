@@ -2,26 +2,14 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-
 import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-
+import { Login, Register, ForgotPassword, ResetPassword } from './pages/Auth';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import NewService from './pages/NewService';
 import ServiceDetail from './pages/ServiceDetail';
-import Databases from './pages/Databases';
-import DatabaseDetail from './pages/DatabaseDetail';
-import EnvGroups from './pages/EnvGroups';
-import Domains from './pages/Domains';
-import Teams from './pages/Teams';
-import Activity from './pages/Activity';
-import Billing from './pages/Billing';
-import AccountSettings from './pages/AccountSettings';
-import AdminPanel from './pages/AdminPanel';
+import { Databases, DatabaseDetail } from './pages/Databases';
+import { EnvGroups, Domains, Teams, Activity, Billing, AccountSettings, AdminPanel } from './pages/AllPages';
 
 function Private({ children }) {
   const { user, loading } = useAuth();
@@ -44,7 +32,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Toaster position="top-right" toastOptions={{ style: { background: '#111128', color: '#e2e8f0', border: '1px solid #252545', fontFamily: 'Plus Jakarta Sans, sans-serif' }, success: { iconTheme: { primary: '#10b981', secondary: '#111128' } }, error: { iconTheme: { primary: '#ef4444', secondary: '#111128' } } }} />
+        <Toaster position="top-right" toastOptions={{ style: { background: '#111128', color: '#e2e8f0', border: '1px solid #252545' } }} />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Guest><Login /></Guest>} />
@@ -55,7 +43,7 @@ export default function App() {
           <Route path="/dashboard" element={<Private><Layout /></Private>}>
             <Route index element={<Dashboard />} />
             <Route path="new" element={<NewService />} />
-            <Route path="services/:id/*" element={<ServiceDetail />} />
+            <Route path="services/:id" element={<ServiceDetail />} />
             <Route path="databases" element={<Databases />} />
             <Route path="databases/:id" element={<DatabaseDetail />} />
             <Route path="env-groups" element={<EnvGroups />} />

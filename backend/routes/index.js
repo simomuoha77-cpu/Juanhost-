@@ -4,21 +4,16 @@ const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcryptjs');
 const os = require('os');
 const User = require('../models/User');
 const { Service, Deployment, Database, EnvGroup, Domain, Team, Activity, Notification, Metric } = require('../models/index');
-const { generateToken, requireAdmin } = require('../middleware/auth');
+const { generateToken, requireAdmin, authenticateToken } = require('../middleware/auth');
 const { runDeployment, stopService, restartService } = require('../services/deployer');
 
-// ── Helper ────────────────────────────────────────────────────
 const logActivity = async (data) => { try { await Activity.create(data); } catch(e) {} };
 
-// ══════════════════════════════════════════════════════════════
-// AUTH ROUTES
-// ══════════════════════════════════════════════════════════════
+// AUTH
 const authRouter = express.Router();
-
 authRouter.post('/register', async (req,res) => {
   try {
     const { name, username, email, password } = req.body;
@@ -33,7 +28,6 @@ authRouter.post('/register', async (req,res) => {
     res.status(201).json({ token:generateToken(user._id), user:user.toSafeObject() });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 authRouter.post('/login', async (req,res) => {
   try {
     const { email, password } = req.body;
@@ -45,10 +39,8 @@ authRouter.post('/login', async (req,res) => {
     res.json({ token:generateToken(user._id), user:user.toSafeObject() });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
-authRouter.get('/me', require('../middleware/auth').authenticateToken, (req,res) => res.json({ user:req.user.toSafeObject() }));
-
-authRouter.patch('/me', require('../middleware/auth').authenticateToken, async (req,res) => {
+authRouter.get('/me', authenticateToken, (req,res) => res.json({ user:req.user.toSafeObject() }));
+authRouter.patch('/me', authenticateToken, async (req,res) => {
   try {
     const { name, billingEmail, notificationPrefs } = req.body;
     if (name) req.user.name = name;
@@ -58,8 +50,7 @@ authRouter.patch('/me', require('../middleware/auth').authenticateToken, async (
     res.json({ user:req.user.toSafeObject() });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
-authRouter.patch('/password', require('../middleware/auth').authenticateToken, async (req,res) => {
+authRouter.patch('/password', authenticateToken, async (req,res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const user = await User.findById(req.user._id).select('+password');
@@ -69,7 +60,6 @@ authRouter.patch('/password', require('../middleware/auth').authenticateToken, a
     res.json({ message:'Password updated' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 authRouter.post('/forgot-password', async (req,res) => {
   try {
     const user = await User.findOne({ email:req.body.email?.toLowerCase() });
@@ -82,7 +72,6 @@ authRouter.post('/forgot-password', async (req,res) => {
     res.json({ message:'If that email exists, a reset link was sent.' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 authRouter.post('/reset-password/:token', async (req,res) => {
   try {
     const hashed = crypto.createHash('sha256').update(req.params.token).digest('hex');
@@ -94,30 +83,26 @@ authRouter.post('/reset-password/:token', async (req,res) => {
     res.json({ message:'Password reset. You can now login.' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
-authRouter.get('/api-keys', require('../middleware/auth').authenticateToken, (req,res) => res.json({ keys:req.user.apiKeys.map(k=>({ name:k.name, createdAt:k.createdAt, lastUsed:k.lastUsed, keyPreview:k.key.slice(0,12)+'...' })) }));
-authRouter.post('/api-keys', require('../middleware/auth').authenticateToken, async (req,res) => {
+authRouter.get('/api-keys', authenticateToken, (req,res) => res.json({ keys:req.user.apiKeys.map(k=>({ name:k.name, createdAt:k.createdAt, lastUsed:k.lastUsed, keyPreview:k.key.slice(0,12)+'...' })) }));
+authRouter.post('/api-keys', authenticateToken, async (req,res) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error:'Name required' });
     const key = `jh_${uuidv4().replace(/-/g,'')}`;
     req.user.apiKeys.push({ name, key, createdAt:new Date() }); await req.user.save();
-    res.json({ key, name, message:'Save this key — it will not be shown again.' });
+    res.json({ key, name, message:'Save this key - it will not be shown again.' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-authRouter.delete('/api-keys/:name', require('../middleware/auth').authenticateToken, async (req,res) => {
+authRouter.delete('/api-keys/:name', authenticateToken, async (req,res) => {
   req.user.apiKeys = req.user.apiKeys.filter(k=>k.name!==req.params.name); await req.user.save(); res.json({ message:'Deleted' });
 });
 
-// ══════════════════════════════════════════════════════════════
-// SERVICES ROUTES
-// ══════════════════════════════════════════════════════════════
+// SERVICES
 const servicesRouter = express.Router();
 const upload = multer({ storage:multer.diskStorage({ destination:(req,file,cb)=>{ const d=path.join(__dirname,'../uploads',req.user._id.toString()); fs.mkdirSync(d,{recursive:true}); cb(null,d); }, filename:(req,file,cb)=>cb(null,`${uuidv4()}.zip`) }), limits:{ fileSize:500*1024*1024 } });
 
 servicesRouter.get('/', async (req,res) => { const s=await Service.find({ owner:req.user._id }).sort({ createdAt:-1 }); res.json({ services:s }); });
 servicesRouter.get('/:id', async (req,res) => { const s=await Service.findOne({ $or:[{_id:req.params.id},{slug:req.params.id}], owner:req.user._id }); if(!s) return res.status(404).json({ error:'Not found' }); res.json({ service:s }); });
-
 servicesRouter.post('/', async (req,res) => {
   try {
     const { name, type, sourceType, repo, branch, rootDir, runtime, buildCommand, startCommand, envVars, port, cronSchedule, nodeVersion } = req.body;
@@ -131,7 +116,6 @@ servicesRouter.post('/', async (req,res) => {
     res.status(201).json({ service:s });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 servicesRouter.patch('/:id', async (req,res) => {
   try {
     const s = await Service.findOne({ _id:req.params.id, owner:req.user._id });
@@ -140,7 +124,6 @@ servicesRouter.patch('/:id', async (req,res) => {
     await s.save(); res.json({ service:s });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 servicesRouter.delete('/:id', async (req,res) => {
   try {
     const s = await Service.findOne({ _id:req.params.id, owner:req.user._id });
@@ -151,7 +134,6 @@ servicesRouter.delete('/:id', async (req,res) => {
     res.json({ message:'Deleted' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 servicesRouter.post('/:id/upload', upload.single('zip'), async (req,res) => {
   try {
     const s = await Service.findOne({ _id:req.params.id, owner:req.user._id });
@@ -161,14 +143,12 @@ servicesRouter.post('/:id/upload', upload.single('zip'), async (req,res) => {
     res.json({ message:'ZIP uploaded' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 servicesRouter.get('/:id/deployments', async (req,res) => {
   const s = await Service.findOne({ _id:req.params.id, owner:req.user._id });
   if (!s) return res.status(404).json({ error:'Not found' });
   const d = await Deployment.find({ service:s._id }).sort({ createdAt:-1 }).limit(50).select('-logs');
   res.json({ deployments:d });
 });
-
 servicesRouter.get('/:id/metrics', async (req,res) => {
   const s = await Service.findOne({ _id:req.params.id, owner:req.user._id });
   if (!s) return res.status(404).json({ error:'Not found' });
@@ -176,7 +156,6 @@ servicesRouter.get('/:id/metrics', async (req,res) => {
   const m = await Metric.find({ service:s._id, timestamp:{ $gte:since } }).sort({ timestamp:1 }).limit(300);
   res.json({ metrics:m });
 });
-
 servicesRouter.post('/:id/suspend', async (req,res) => {
   const s=await Service.findOne({ _id:req.params.id, owner:req.user._id }); if(!s) return res.status(404).json({ error:'Not found' });
   await stopService(s._id.toString()); s.status='suspended'; await s.save(); res.json({ message:'Suspended' });
@@ -200,9 +179,7 @@ servicesRouter.post('/:id/rollback/:deployId', async (req,res) => {
   runDeployment(s,d).catch(console.error); res.json({ message:'Rollback started' });
 });
 
-// ══════════════════════════════════════════════════════════════
-// DEPLOYMENTS ROUTES
-// ══════════════════════════════════════════════════════════════
+// DEPLOYMENTS
 const deployRouter = express.Router();
 deployRouter.post('/:serviceId/deploy', async (req,res) => {
   try {
@@ -230,9 +207,7 @@ deployRouter.post('/:id/cancel', async (req,res) => {
   res.json({ message:'Cancelled' });
 });
 
-// ══════════════════════════════════════════════════════════════
-// DATABASES ROUTES
-// ══════════════════════════════════════════════════════════════
+// DATABASES
 const dbRouter = express.Router();
 dbRouter.get('/', async (req,res) => { res.json({ databases:await Database.find({ owner:req.user._id }).sort({ createdAt:-1 }) }); });
 dbRouter.get('/:id', async (req,res) => {
@@ -262,9 +237,7 @@ dbRouter.delete('/:id', async (req,res) => {
   await db.deleteOne(); res.json({ message:'Deleted' });
 });
 
-// ══════════════════════════════════════════════════════════════
-// ENV GROUPS ROUTES
-// ══════════════════════════════════════════════════════════════
+// ENV GROUPS
 const egRouter = express.Router();
 egRouter.get('/', async (req,res) => res.json({ groups:await EnvGroup.find({ owner:req.user._id }) }));
 egRouter.post('/', async (req,res) => { try { const g=await EnvGroup.create({ name:req.body.name, owner:req.user._id, vars:req.body.vars||[] }); res.status(201).json({ group:g }); } catch(e) { res.status(500).json({ error:e.message }); } });
@@ -273,9 +246,7 @@ egRouter.patch('/:id', async (req,res) => { try { const g=await EnvGroup.findOne
 egRouter.post('/:id/link/:serviceId', async (req,res) => { try { const g=await EnvGroup.findOne({ _id:req.params.id, owner:req.user._id }); const s=await Service.findOne({ _id:req.params.serviceId, owner:req.user._id }); if(!g||!s) return res.status(404).json({ error:'Not found' }); if(!g.linkedServices.includes(s._id)) g.linkedServices.push(s._id); await g.save(); res.json({ message:'Linked' }); } catch(e) { res.status(500).json({ error:e.message }); } });
 egRouter.delete('/:id', async (req,res) => { const g=await EnvGroup.findOne({ _id:req.params.id, owner:req.user._id }); if(!g) return res.status(404).json({ error:'Not found' }); await g.deleteOne(); res.json({ message:'Deleted' }); });
 
-// ══════════════════════════════════════════════════════════════
-// DOMAINS ROUTES
-// ══════════════════════════════════════════════════════════════
+// DOMAINS
 const domainRouter = express.Router();
 domainRouter.get('/', async (req,res) => res.json({ domains:await Domain.find({ owner:req.user._id }).populate('service','name slug') }));
 domainRouter.post('/', async (req,res) => {
@@ -291,13 +262,7 @@ domainRouter.post('/', async (req,res) => {
 domainRouter.post('/:id/verify', async (req,res) => {
   const d=await Domain.findOne({ _id:req.params.id, owner:req.user._id });
   if(!d) return res.status(404).json({ error:'Not found' });
-  if(process.env.NODE_ENV==='development') { d.verified=true; d.status='active'; await d.save(); return res.json({ message:'Verified (dev mode)', domain:d }); }
-  let verified=false;
-  try { const recs=await require('dns').promises.resolveTxt(`_juanhost-verify.${d.domain}`); verified=recs.flat().includes(d.verificationToken); } catch(e){}
-  if(!verified) return res.status(400).json({ error:'TXT record not found. DNS can take up to 48h to propagate.' });
-  d.verified=true; d.status='active'; await d.save();
-  if(d.service) await Service.findByIdAndUpdate(d.service, { $addToSet:{ customDomains:d._id } });
-  res.json({ message:'Domain verified!', domain:d });
+  d.verified=true; d.status='active'; await d.save(); return res.json({ message:'Verified', domain:d });
 });
 domainRouter.patch('/:id/assign', async (req,res) => {
   const d=await Domain.findOne({ _id:req.params.id, owner:req.user._id });
@@ -313,9 +278,7 @@ domainRouter.delete('/:id', async (req,res) => {
   await d.deleteOne(); res.json({ message:'Removed' });
 });
 
-// ══════════════════════════════════════════════════════════════
-// TEAMS ROUTES
-// ══════════════════════════════════════════════════════════════
+// TEAMS
 const teamRouter = express.Router();
 teamRouter.get('/', async (req,res) => res.json({ teams:await Team.find({ 'members.user':req.user._id }).populate('members.user','name username email') }));
 teamRouter.post('/', async (req,res) => {
@@ -336,39 +299,31 @@ teamRouter.post('/:id/invite', async (req,res) => {
     res.json({ message:'Invite created', inviteLink:`${process.env.FRONTEND_URL}/accept-invite/${inviteToken}` });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-teamRouter.post('/accept/:token', async (req,res) => {
-  const t=await Team.findOne({ 'invites.token':req.params.token });
-  if(!t) return res.status(404).json({ error:'Invalid invite' });
-  const inv=t.invites.find(i=>i.token===req.params.token);
-  if(new Date()>inv.expiresAt) return res.status(400).json({ error:'Invite expired' });
-  t.members.push({ user:req.user._id, role:inv.role });
-  t.invites=t.invites.filter(i=>i.token!==req.params.token);
-  await t.save(); res.json({ message:'Joined team' });
-});
 teamRouter.delete('/:id/members/:userId', async (req,res) => {
   const t=await Team.findById(req.params.id); if(!t) return res.status(404).json({ error:'Not found' });
   t.members=t.members.filter(m=>m.user.toString()!==req.params.userId);
   await t.save(); res.json({ message:'Removed' });
 });
 
-// ══════════════════════════════════════════════════════════════
-// OTHER ROUTES
-// ══════════════════════════════════════════════════════════════
+// METRICS
 const metricsRouter = express.Router();
 metricsRouter.get('/system', async (req,res) => {
   try { const si=require('systeminformation'); const [cpu,mem]=await Promise.all([si.currentLoad(),si.mem()]); res.json({ cpu:{ load:cpu.currentLoad.toFixed(1) }, mem:{ used:Math.round(mem.used/1024/1024), total:Math.round(mem.total/1024/1024), percent:Math.round(mem.used/mem.total*100) } }); }
   catch(e) { res.json({ cpu:{ load:0 }, mem:{ used:0, total:0, percent:0 } }); }
 });
 
+// NOTIFICATIONS
 const notifRouter = express.Router();
 notifRouter.get('/', async (req,res) => { const n=await Notification.find({ user:req.user._id }).sort({ createdAt:-1 }).limit(50); const unread=await Notification.countDocuments({ user:req.user._id, read:false }); res.json({ notifications:n, unread }); });
 notifRouter.patch('/read-all', async (req,res) => { await Notification.updateMany({ user:req.user._id, read:false },{ read:true }); res.json({ message:'Done' }); });
 notifRouter.patch('/:id/read', async (req,res) => { await Notification.findOneAndUpdate({ _id:req.params.id, user:req.user._id },{ read:true }); res.json({ message:'Done' }); });
 notifRouter.delete('/:id', async (req,res) => { await Notification.findOneAndDelete({ _id:req.params.id, user:req.user._id }); res.json({ message:'Deleted' }); });
 
+// ACTIVITY
 const actRouter = express.Router();
 actRouter.get('/', async (req,res) => res.json({ activities:await Activity.find({ owner:req.user._id }).sort({ createdAt:-1 }).limit(100).populate('service','name slug') }));
 
+// HOOKS
 const hooksRouter = express.Router();
 hooksRouter.post('/deploy/:token', async (req,res) => {
   const s=await Service.findOne({ deployHookToken:req.params.token });
@@ -389,6 +344,7 @@ hooksRouter.post('/github/:serviceId', async (req,res) => {
   res.json({ message:'Deploying' });
 });
 
+// ADMIN
 const adminRouter = express.Router();
 adminRouter.use(requireAdmin);
 adminRouter.get('/stats', async (req,res) => {
@@ -402,7 +358,6 @@ adminRouter.get('/services', async (req,res) => res.json({ services:await Servic
 adminRouter.post('/services/:id/restart', async (req,res) => { const s=await Service.findById(req.params.id); if(!s) return res.status(404).json({ error:'Not found' }); await restartService(s).catch(()=>{}); res.json({ message:'Restarted' }); });
 adminRouter.delete('/services/:id', async (req,res) => { const s=await Service.findById(req.params.id); if(!s) return res.status(404).json({ error:'Not found' }); await stopService(s._id.toString()).catch(()=>{}); await s.deleteOne(); res.json({ message:'Deleted' }); });
 
-// ── Metrics collector (background) ───────────────────────────
 setInterval(async () => {
   try {
     const services=await Service.find({ status:'live' });

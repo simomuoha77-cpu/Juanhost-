@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 
-// ── Service ──────────────────────────────────────────────────
 const serviceSchema = new mongoose.Schema({
   name: { type:String, required:true, trim:true },
   slug: { type:String, unique:true },
@@ -39,7 +38,6 @@ serviceSchema.pre('save', function(next) {
   next();
 });
 
-// ── Deployment ───────────────────────────────────────────────
 const deploymentSchema = new mongoose.Schema({
   service: { type:mongoose.Schema.Types.ObjectId, ref:'Service', required:true },
   owner: { type:mongoose.Schema.Types.ObjectId, ref:'User', required:true },
@@ -51,7 +49,6 @@ const deploymentSchema = new mongoose.Schema({
   startedAt: Date, finishedAt: Date, buildDuration: Number, errorMessage: String
 }, { timestamps:true });
 
-// ── Database ─────────────────────────────────────────────────
 const databaseSchema = new mongoose.Schema({
   name: { type:String, required:true },
   owner: { type:mongoose.Schema.Types.ObjectId, ref:'User', required:true },
@@ -65,7 +62,6 @@ const databaseSchema = new mongoose.Schema({
   backupEnabled: { type:Boolean, default:true }, lastBackupAt: Date, expiresAt: Date
 }, { timestamps:true });
 
-// ── EnvGroup ─────────────────────────────────────────────────
 const envGroupSchema = new mongoose.Schema({
   name: { type:String, required:true },
   owner: { type:mongoose.Schema.Types.ObjectId, ref:'User', required:true },
@@ -73,7 +69,6 @@ const envGroupSchema = new mongoose.Schema({
   linkedServices: [{ type:mongoose.Schema.Types.ObjectId, ref:'Service' }]
 }, { timestamps:true });
 
-// ── Domain ───────────────────────────────────────────────────
 const domainSchema = new mongoose.Schema({
   domain: { type:String, required:true, unique:true, lowercase:true },
   service: { type:mongoose.Schema.Types.ObjectId, ref:'Service' },
@@ -85,7 +80,6 @@ const domainSchema = new mongoose.Schema({
   dnsTarget: String
 }, { timestamps:true });
 
-// ── Team ─────────────────────────────────────────────────────
 const teamSchema = new mongoose.Schema({
   name: { type:String, required:true },
   slug: { type:String, unique:true },
@@ -95,7 +89,6 @@ const teamSchema = new mongoose.Schema({
   invites: [{ email:String, role:String, token:String, expiresAt:Date }]
 }, { timestamps:true });
 
-// ── Activity ─────────────────────────────────────────────────
 const activitySchema = new mongoose.Schema({
   owner: { type:mongoose.Schema.Types.ObjectId, ref:'User', required:true },
   type: { type:String, required:true },
@@ -104,7 +97,6 @@ const activitySchema = new mongoose.Schema({
   deployment: { type:mongoose.Schema.Types.ObjectId, ref:'Deployment' }
 }, { timestamps:true });
 
-// ── Notification ─────────────────────────────────────────────
 const notificationSchema = new mongoose.Schema({
   user: { type:mongoose.Schema.Types.ObjectId, ref:'User', required:true },
   title: String, message: String,
@@ -114,7 +106,6 @@ const notificationSchema = new mongoose.Schema({
   service: { type:mongoose.Schema.Types.ObjectId, ref:'Service' }
 }, { timestamps:true });
 
-// ── Metric ───────────────────────────────────────────────────
 const metricSchema = new mongoose.Schema({
   service: { type:mongoose.Schema.Types.ObjectId, ref:'Service', required:true },
   timestamp: { type:Date, default:Date.now },

@@ -17,7 +17,7 @@ const clients = new Map();
 global.broadcastLog = (serviceId, data) => {
   const set = clients.get(serviceId);
   if (!set) return;
-  const payload = JSON.stringify({ type:'log', ...data });
+  const payload = JSON.stringify({ type: 'log', ...data });
   set.forEach(ws => { if (ws.readyState === 1) ws.send(payload); });
 };
 
@@ -27,18 +27,18 @@ wss.on('connection', (ws, req) => {
   if (!serviceId) return ws.close();
   if (!clients.has(serviceId)) clients.set(serviceId, new Set());
   clients.get(serviceId).add(ws);
-  ws.send(JSON.stringify({ type:'connected' }));
-  ws.on('close', () => { const s=clients.get(serviceId); if(s){s.delete(ws); if(!s.size)clients.delete(serviceId);} });
-  ws.on('error', ()=>{});
+  ws.send(JSON.stringify({ type: 'connected' }));
+  ws.on('close', () => { const s = clients.get(serviceId); if (s) { s.delete(ws); if (!s.size) clients.delete(serviceId); } });
+  ws.on('error', () => {});
 });
 
-app.use(helmet({ contentSecurityPolicy:false }));
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3001', credentials:true }));
-app.use(rateLimit({ windowMs:15*60*1000, max:300 }));
-app.use(express.json({ limit:'50mb' }));
-app.use(express.urlencoded({ extended:true }));
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3001', credentials: true }));
+app.use(rateLimit({ windowMs: 15*60*1000, max: 300 }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
-app.use('/uploads', express.static(path.join(__dirname,'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const { authenticateToken } = require('./middleware/auth');
 app.use('/api/auth',          require('./routes/auth'));
@@ -61,7 +61,7 @@ app.use((err,req,res,next) => res.status(err.status||500).json({ error:err.messa
 
 const PORT = process.env.PORT || 5000;
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => { console.log('✅ MongoDB connected'); server.listen(PORT, () => console.log(`🚀 JuanHost running on port ${PORT}`)); })
-  .catch(err => { console.error('❌ DB failed:', err.message); process.exit(1); });
+  .then(() => { console.log('MongoDB connected'); server.listen(PORT, () => console.log(`JuanHost running on port ${PORT}`)); })
+  .catch(err => { console.error('DB failed:', err.message); process.exit(1); });
 
 module.exports = { app, server };
