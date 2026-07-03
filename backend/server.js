@@ -40,6 +40,15 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Hostname-based routing: lets deployed apps be reached at
+//   sitename.PLATFORM_DOMAIN   (free subdomain, auto-assigned per service)
+//   customdomain.com           (user's own domain, once verified + assigned)
+// without needing the /app/:slug path prefix. Falls through to normal
+// Express routing (dashboard API, frontend, etc.) for the platform's own
+// root domain and any unmatched host.
+app.use(require('./routes/hostRouter'));
+
+
 const { authenticateToken } = require('./middleware/auth');
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/services',      authenticateToken, require('./routes/services'));

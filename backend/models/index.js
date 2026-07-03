@@ -31,7 +31,8 @@ const serviceSchema = new mongoose.Schema({
   lastDeployedAt: Date,
   uptimeStart: Date,
   cronSchedule: String,
-  maxMemoryMB: { type:Number, default:512 }
+  maxMemoryMB: { type:Number, default:512 },
+  customDomains: [{ type:mongoose.Schema.Types.ObjectId, ref:'Domain' }]
 }, { timestamps:true });
 serviceSchema.pre('save', function(next) {
   if (!this.slug) { const s = this._id.toString().slice(-6); this.slug = `${this.name}-${s}`; this.subdomain = this.slug; }

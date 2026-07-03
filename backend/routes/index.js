@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const dns = require('dns').promises;
 const User = require('../models/User');
 const { Service, Deployment, Database, EnvGroup, Domain, Team, Activity, Notification, Metric } = require('../models/index');
 const { generateToken, requireAdmin, authenticateToken } = require('../middleware/auth');
@@ -262,6 +263,15 @@ domainRouter.post('/', async (req,res) => {
 domainRouter.post('/:id/verify', async (req,res) => {
   const d=await Domain.findOne({ _id:req.params.id, owner:req.user._id });
   if(!d) return res.status(404).json({ error:'Not found' });
+  try {
+    const records = await dns.resolveTxt(`_juanhost-verify.${d.domain}`);
+    const flat = records.map(r => r.join(''));
+    if (!flat.includes(d.verificationToken)) {
+      return res.status(400).json({ error:'TXT record not found or does not match yet. DNS changes can take a few minutes to propagate - try again shortly.' });
+    }
+  } catch (e) {
+    return res.status(400).json({ error:`Could not find the verification TXT record for ${d.domain}. Make sure you added: _juanhost-verify.${d.domain} TXT ${d.verificationToken}` });
+  }
   d.verified=true; d.status='active'; await d.save(); return res.json({ message:'Verified', domain:d });
 });
 domainRouter.patch('/:id/assign', async (req,res) => {
