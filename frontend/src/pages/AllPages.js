@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
-import { egAPI, domainsAPI, teamsAPI, notifAPI, activityAPI, adminAPI, authAPI } from '../api/client';
+import { egAPI, domainsAPI, teamsAPI, notifAPI, activityAPI, adminAPI, authAPI, servicesAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Trash2, Eye, EyeOff, Copy, CheckCircle, Clock, Save, Users, Globe, Layers, Bell, Shield, Lock } from 'lucide-react';
 
@@ -65,23 +65,42 @@ export function EnvGroups() {
 
 export function Domains() {
   const [domains, setDomains] = useState([]);
+  const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ domain:'' });
+  const [form, setForm] = useState({ domain:'', serviceId:'' });
   const [showAdd, setShowAdd] = useState(false);
   const [verifying, setVerifying] = useState({});
+  const [dnsInfo, setDnsInfo] = useState(null);
+  const [assigning, setAssigning] = useState({});
 
-  useEffect(() => { domainsAPI.list().then(r => setDomains(r.data.domains)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    Promise.all([domainsAPI.list(), servicesAPI.list()])
+      .then(([d, s]) => { setDomains(d.data.domains); setServices(s.data.services || s.data); })
+      .finally(() => setLoading(false));
+  }, []);
 
   const add = async e => {
     e.preventDefault();
-    try { const { data } = await domainsAPI.add(form); setDomains(d => [...d, data.domain]); setShowAdd(false); setForm({ domain:'' }); toast.success('Domain added!'); }
-    catch (err) { toast.error(err.response?.data?.error || 'Failed'); }
+    try {
+      const { data } = await domainsAPI.add(form);
+      setDomains(d => [...d, data.domain]);
+      setDnsInfo({ domain: form.domain, verifyTxt: data.verifyTxt, cname: data.cname });
+      setShowAdd(false); setForm({ domain:'', serviceId:'' });
+      toast.success('Domain added - now add the DNS records shown below');
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed'); }
   };
   const verify = async (id) => {
     setVerifying(v => ({...v,[id]:true}));
     try { await domainsAPI.verify(id); toast.success('Verified!'); domainsAPI.list().then(r => setDomains(r.data.domains)); }
-    catch (err) { toast.error(err.response?.data?.error || 'Failed'); }
+    catch (err) { toast.error(err.response?.data?.error || 'DNS not found yet - it can take a few minutes to propagate'); }
     finally { setVerifying(v => ({...v,[id]:false})); }
+  };
+  const assignTo = async (id, serviceId) => {
+    if (!serviceId) return;
+    setAssigning(a => ({...a,[id]:true}));
+    try { await domainsAPI.assign(id, { serviceId }); toast.success('Domain connected to app!'); domainsAPI.list().then(r => setDomains(r.data.domains)); }
+    catch (err) { toast.error(err.response?.data?.error || 'Failed - verify the domain first'); }
+    finally { setAssigning(a => ({...a,[id]:false})); }
   };
   const remove = async (id) => { if (!window.confirm('Remove?')) return; try { await domainsAPI.delete(id); setDomains(d => d.filter(x=>x._id!==id)); toast.success('Removed'); } catch { toast.error('Failed'); } };
 
@@ -90,23 +109,56 @@ export function Domains() {
 
   return (
     <div className="page page-md">
-      <div className="page-header"><div><div className="page-title">Domains</div><div className="page-subtitle">Connect custom domains</div></div><button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}><Plus size={15} /> Add Domain</button></div>
+      <div className="page-header"><div><div className="page-title">Domains</div><div className="page-subtitle">Every app gets a free subdomain automatically. Add your own domain here if you have one - it's optional.</div></div><button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}><Plus size={15} /> Add Domain</button></div>
+
       {showAdd && (
         <div className="card" style={{ marginBottom:16, borderColor:'var(--accent)' }}>
           <form onSubmit={add}>
-            <div className="form-group"><label style={lbl}>Domain *</label><input style={inp} placeholder="myapp.com" value={form.domain} onChange={e => setForm({domain:e.target.value.toLowerCase()})} required /></div>
+            <div className="form-group"><label style={lbl}>Domain *</label><input style={inp} placeholder="myapp.com" value={form.domain} onChange={e => setForm(f => ({...f, domain:e.target.value.toLowerCase()}))} required /></div>
+            <div className="form-group">
+              <label style={lbl}>Connect to App (optional, can assign later)</label>
+              <select style={inp} value={form.serviceId} onChange={e => setForm(f => ({...f, serviceId:e.target.value}))}>
+                <option value="">Choose later</option>
+                {services.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+              </select>
+            </div>
             <div style={{ display:'flex', gap:8 }}><button className="btn btn-primary btn-sm" type="submit">Add</button><button className="btn btn-secondary btn-sm" type="button" onClick={() => setShowAdd(false)}>Cancel</button></div>
           </form>
         </div>
       )}
+
+      {dnsInfo && (
+        <div className="card" style={{ marginBottom:16, borderColor:'var(--yellow)' }}>
+          <div style={{ fontWeight:700, marginBottom:8 }}>Add these DNS records at your domain registrar for {dnsInfo.domain}</div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:'0.8rem', background:'var(--bg-1)', padding:12, borderRadius:8, marginBottom:8, wordBreak:'break-all' }}>
+            TXT &nbsp;{dnsInfo.verifyTxt}
+          </div>
+          <div style={{ fontFamily:'var(--mono)', fontSize:'0.8rem', background:'var(--bg-1)', padding:12, borderRadius:8, wordBreak:'break-all' }}>
+            {dnsInfo.cname}
+          </div>
+          <div style={{ fontSize:'0.78rem', color:'var(--text-dim)', marginTop:8 }}>DNS changes can take a few minutes to a few hours to take effect. Once added, come back and tap Verify below.</div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop:10 }} onClick={() => setDnsInfo(null)}>Got it</button>
+        </div>
+      )}
+
       {domains.length === 0 ? (
-        <div className="empty-state"><div className="empty-state-icon"><Globe size={24} /></div><h3>No custom domains</h3></div>
+        <div className="empty-state"><div className="empty-state-icon"><Globe size={24} /></div><h3>No custom domains yet</h3><p style={{ color:'var(--text-dim)', fontSize:'0.85rem' }}>Your apps already work fine at their free {platform} subdomain. Add a domain here only if you own one and want to use it instead.</p></div>
       ) : domains.map(d => (
         <div key={d._id} className="card" style={{ marginBottom:12 }}>
           <div className="flex-between">
             <div className="flex">{d.verified ? <CheckCircle size={16} color="var(--green)" /> : <Clock size={16} color="var(--yellow)" />}<span style={{ fontWeight:700 }}>{d.domain}</span></div>
-            <div style={{ display:'flex', gap:6 }}>{!d.verified && <button className="btn btn-success btn-xs" onClick={() => verify(d._id)} disabled={verifying[d._id]}>{verifying[d._id]?'...':'Verify'}</button>}<button className="btn btn-danger btn-xs" onClick={() => remove(d._id)}><Trash2 size={12} /></button></div>
+            <div style={{ display:'flex', gap:6 }}>{!d.verified && <button className="btn btn-success btn-xs" onClick={() => verify(d._id)} disabled={verifying[d._id]}>{verifying[d._id]?'Checking...':'Verify'}</button>}<button className="btn btn-danger btn-xs" onClick={() => remove(d._id)}><Trash2 size={12} /></button></div>
           </div>
+          {d.verified && (
+            <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border)' }}>
+              <label style={lbl}>Connected app</label>
+              <select style={inp} value={d.service?._id || d.service || ''} onChange={e => assignTo(d._id, e.target.value)} disabled={assigning[d._id]}>
+                <option value="">Not connected</option>
+                {services.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+          {!d.verified && <div style={{ marginTop:8, fontSize:'0.78rem', color:'var(--text-dim)' }}>Add the DNS TXT record, then tap Verify.</div>}
         </div>
       ))}
     </div>
